@@ -1,22 +1,30 @@
 "use server";
 
-import { VideoResponse } from "@/types/backend/types";
+import { VideoResponse, VideoRes } from "@/types/backend/types";
 
 const API_KEY = process.env.API_KEY;
 
-export const getVideosByQuery = async (
-  query: string,
-  page: number,
-  perPage: number = 5,
-): Promise<VideoResponse> => {
-  // TODO: Implement API call to Pexels:
-  // 1) Validate API_KEY
-  // 2) fetch(`https://api.pexels.com/videos/search?...`)
-  // 3) map response into VideoResponse shape
 
-  void query;
-  void page;
-  void perPage;
-  void API_KEY;
-  throw new Error("Workshop TODO: Implement getVideosByQuery in lib/getVideos.ts");
-};
+const GetVideos=async(type:string, query:string|null, pages:number, per_page:number =5)=> {
+if (!API_KEY || API_KEY==""){
+  throw new Error("missing API key")
+}
+const res = await(await fetch("https://api.pexels.com/v1/videos/search?query=nature&page=1&per_page=1",{headers: {Authorization: API_KEY}})).json()
+const videos: VideoRes[] = res.videos.map((video: any)=> {
+  return {id: video.id,
+  width: video.id, 
+  height: video.height, 
+  url: video.video_files[0].link, 
+  duration: video.duration?video.duration:0,
+  size: video.size, 
+  user:{
+    id: video.user?.id,
+    name: video.user?.name, 
+    url: video.user?.url
+  }
+}
+})
+return videos
+}
+export default GetVideos
+

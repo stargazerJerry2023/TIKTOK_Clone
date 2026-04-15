@@ -1,29 +1,45 @@
 "use client";
-
 import { VideoResponse } from "@/types/backend/types";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-type VideoFeedProps = {
-  videoRes?: VideoResponse;
-};
 
-export default function VideoFeed({ videoRes }: VideoFeedProps) {
-  // TODO: Implement the feed behavior:
-  // - Keep a videos state
-  // - Track current index
-  // - Play active video / pause inactive videos
-  // - Add mute/unmute control
-  // - Add infinite scroll pagination
+export default function VideoFeed({url}: {url: string}) {
+    const videoRef= useRef<HTMLVideoElement>(null)
+  const [isPaused, setPaused]= useState<{
+    type: boolean,
+    id: number
+  } | null>(null);
+
+
+  const togglePlay = (e: React.MouseEvent<HTMLDivElement>)=> {
+    e.stopPropagation()
+    if (videoRef.current){
+      if (videoRef.current.paused){
+        setPaused({type: false, id: Date.now()})
+      }
+  }
+  }
+
 
   return (
-    <section className="h-screen w-full bg-black text-white grid place-items-center">
-      <div className="text-center space-y-2 px-6">
-        <p className="text-xl font-semibold">Workshop TODO: Implement Video Feed</p>
-        <p className="text-sm opacity-80">
-          {videoRes
-            ? `Starter data loaded (${videoRes.videos.length} videos)`
-            : "No starter data yet"}
-        </p>
+    <>
+      <div className= "h-full w-full overflow-hidden relative flex justify-center items-center">
+        <video ref={videoRef}  src={url}  className= "z-0 absolute inset-0 h-full object-cover rounded-2xl"/>
+      <div className="absolute inset-0 z-10 w-full h-full flex justify-center items-center" onClick={
+        togglePlay
+      }>
+           {isPaused && (
+          <img
+            key={isPaused.id}
+            src={isPaused.type ? "/pause.png" : "/play.png"}
+            className="w-[60px] h-[60px] animate-float-up pointer-events-none"
+            alt={isPaused.type ? "Pause" : "Play"}
+          />
+        )}
       </div>
-    </section>
+      
+    </div>
+        </>
   );
 }
+
