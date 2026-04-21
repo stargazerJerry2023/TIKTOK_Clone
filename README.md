@@ -1,217 +1,112 @@
+---
 
-# Workshop: Fetching Videos from an API
+# Workshop: `lib/getVideos.ts` — what you will add and change
 
-## What are we building?
+This section describes **only** what you will **add** or **change** in the starter. It does not paste the starter file or a full solution.
 
-In this step, we are creating a **server-side function** that fetches videos from the **Pexels API**.
-
-We move from a **first implementation** toward a **fully wired** version:
-
-- the API call runs on the server
-- the response is validated and parsed
-- `query`, `page`, and `per_page` drive the request
-- we return a typed **`VideoResponse`** the rest of the app can use
+Work in **`lib/getVideos.ts`**.
 
 ---
 
-## File setup
+## Add: server-only module marker
 
-We are working in:
-
-**`lib/getVideos.ts`**
-
-This file is responsible for:
-
-- connecting to the Pexels API
-- retrieving video data
-- mapping raw JSON into our **`VideoRes`** shape
-- returning **`VideoResponse`** (`page`, `per_page`, `videos`)
-
----
-
-## Step 1: Enable server-side execution
-
-We start by adding:
+**Add** at the very top of the file:
 
 ```ts
 "use server";
 ```
 
-This tells Next.js that this module runs on the **backend**, not in the browser.
-
-Why this matters:
-
-- protects your API key
-- keeps sensitive logic off the client
+**Why:** Keeps this logic on the server so the Pexels key is not exposed to the browser.
 
 ---
 
-## Step 2: Import types and API key
+## Add: types and environment key
 
-```ts
-import { VideoResponse, VideoRes } from "@/types/backend/types";
+**Add** (or **expand** imports if you only import part of this today):
 
-const API_KEY = process.env.API_KEY;
-```
+- import **`VideoResponse`** and **`VideoRes`** from `@/types/backend/types`
+- a **`const API_KEY = process.env.API_KEY`**
 
-What's happening:
-
-- **`VideoResponse`** → return type for the whole function (`page`, `per_page`, `videos`)
-- **`VideoRes`** → type for each item in the `videos` array after we map the API
-- **`API_KEY`** → read from environment variables (never hardcoded in client bundles)
+**Why:** You need both types for the return value and the mapped items; the key must come from env.
 
 ---
 
-## Step 3: Create the fetch function
+## Change: function name and export style
 
-```ts
-export const getVideosByQuery = async (
-  query: string,
-  pages: number,
-  per_page: number = 5,
-): Promise<VideoResponse> => {
-```
+**Change** the default export / name so the rest of the app can import a **named** function, for example **`getVideosByQuery`**.
 
-Parameters:
+**Add** an explicit return type: **`Promise<VideoResponse>`**.
 
-- **`query`** → search term sent to Pexels (e.g. `"nature"`)
-- **`pages`** → which page of results to fetch (`1` for first load, `2`, `3`, … for "load more")
-- **`per_page`** → how many videos per page (default **5**)
-
-Return type:
-
-- **`Promise<VideoResponse>`** → callers know they get pagination fields plus `videos[]`
+**Why:** `app/page.tsx` will use `import { getVideosByQuery } from "@/lib/getVideos"` and expect a full response object, not only an array.
 
 ---
 
-## Step 4: Validate API key
+## Change: function parameters that match the real API call
 
-```ts
-  if (!API_KEY || API_KEY === "") {
-    throw new Error("Missing API KEY");
-  }
-```
+**Change** the parameter list so the request is driven by:
 
-What's happening:
+- **`query`** (string)
+- **`pages`** (number)
+- **`per_page`** (number, with a sensible default such as `5`)
 
-- if there is no key, we **stop immediately** with a clear error
+**Remove or stop relying on** any parameter that is not used anywhere in the function, so the signature matches behavior.
 
-Why this matters:
-
-- avoids confusing failed requests
-- makes misconfiguration obvious during development
+**Why:** The same function should support page `1` on the server and later pages for “load more.”
 
 ---
 
-## Step 5: Call Pexels with a dynamic URL
+## Add: guard clause for the API key
 
-```ts
-  const res = await fetch(
-    `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query)}&page=${pages}&per_page=${per_page}`,
-    { headers: { Authorization: API_KEY } },
-  );
-```
+**Add** a check that throws if **`API_KEY`** is missing or empty.
 
-What's happening:
-
-- **`query`**, **`pages`**, and **`per_page`** are actually used in the URL
-- **`encodeURIComponent(query)`** keeps spaces and special characters safe
-
-Why this matters:
-
-- same function works for the **first page** (server) and **later pages** (client infinite scroll)
+**Why:** Fail fast with a clear error instead of a vague failed request.
 
 ---
 
-## Step 6: Check HTTP status before parsing
+## Change: build the request URL from variables
 
-```ts
-  if (!res.ok) {
-    throw new Error("Failed to fetch videos");
-  }
+**Change** the `fetch` URL so **`query`**, **`pages`**, and **`per_page`** are interpolated into the string (not hardcoded).
 
-  const data = await res.json();
-```
+**Add** **`encodeURIComponent(query)`** (or equivalent) for the query segment.
 
-What's happening:
-
-- **`fetch` does not throw** on 404/401/500 — we check **`res.ok`** ourselves
-- only then do we parse JSON into **`data`**
-
-Why this matters:
-
-- separates "request finished" from "request succeeded"
-- teaches real-world `fetch` patterns
+**Why:** Search text and pagination must actually affect the response.
 
 ---
 
-## Step 7: Map API results to `VideoRes`
+## Add: HTTP success check before JSON
 
-```ts
-  const videos: VideoRes[] = data.videos.map((video: any) => ({
-    id: video.id,
-    width: video.width,
-    height: video.height,
-    url: video.video_files[0].link,
-    duration: video.duration ? video.duration : 0,
-    size: video.size,
-    tags: video.tags || [],
-    user: {
-      id: video.user?.id,
-      name: video.user?.name,
-      url: video.user?.url,
-    },
-  }));
-```
+**Add** after `await fetch(...)`:
 
-What's happening:
+- if **`!res.ok`**, throw an error
+- only then **`await res.json()`**
 
-- we **normalize** Pexels' nested shape into our app's **`VideoRes`** type
-- **`width`** must come from **`video.width`** (not `video.id`)
-- **`tags`** defaults to **`[]`** if missing
-
-Why this matters:
-
-- UI code does not depend on raw Pexels field names everywhere
-- TypeScript stays aligned with **`types/backend/types.ts`**
+**Why:** `fetch` does not throw on 4xx/5xx; you must check **`res.ok`**.
 
 ---
 
-## Step 8: Return a `VideoResponse`
+## Change: map raw items to **`VideoRes`**
 
-```ts
-  return {
-    page: data.page,
-    per_page: data.per_page,
-    videos,
-  };
-};
-```
+**Change** the mapper so each video includes at least:
 
-What's happening:
+- correct **`width`** from the API’s width field (not from **`id`**)
+- **`tags`** as **`video.tags || []`** so it matches the type
 
-- we return **pagination metadata** from the API plus our mapped **`videos`** array
-
-Why this matters:
-
-- **`app/page.tsx`** can pass **`videoRes`** into **`VideoFeed`**
-- the client can request the next page with the same function using **`pages + 1`**
+**Why:** The UI and TypeScript expect a stable, correct shape.
 
 ---
 
-## Step 9: Import from `page.tsx` (how this file is used)
+## Add: return pagination plus videos
 
-Elsewhere you will write:
+**Change** the return value from “only an array” to an object with:
 
-```ts
-import { getVideosByQuery } from "@/lib/getVideos";
-```
+- **`page`** from the parsed response
+- **`per_page`** from the parsed response
+- **`videos`** as your mapped array
 
-What's happening:
+**Why:** Callers need **`VideoResponse`** (`page`, `per_page`, `videos`) for the feed and for future page fetches.
 
-- **`getVideosByQuery`** is a **named export**, so imports use curly braces
+---
 
-Why this matters:
+## After this file: how it will be used (no code from other files here)
 
-- clear, searchable name across the codebase
-- matches typical Next.js / TypeScript patterns
+**Next (outside this README’s code):** `app/page.tsx` will call **`getVideosByQuery`** for the first page and pass the result into the video feed component. That wiring is a separate workshop section.
