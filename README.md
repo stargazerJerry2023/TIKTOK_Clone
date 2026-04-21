@@ -154,6 +154,15 @@ export default async function Home() {
 }
 ```
 
+### In app/page.tsx, log that the page received data
+```
+const data = await getVideosByQuery("nature", 1, 5);
+console.log("[Home] VideoResponse", {
+  page: data.page,
+  per_page: data.per_page,
+  count: data.videos.length,
+});
+```
 ### 5. Remove debug-only code (optional cleanup)
 
 **Starter issue:** A stray **`console.log(data[0].url)`** (or similar) adds noise and encourages thinking in terms of a single URL instead of **`VideoResponse`**.
