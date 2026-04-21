@@ -161,3 +161,196 @@ export default async function Home() {
 **Change:** Delete those logs once the feed works, or replace them with a single structured log during debugging only.
 
 **Why for Workshop 1:** Students see the **App Router** pattern: **`async`** server page → **`await`** data → pass props to a **client** component. They also see why **`videoRes`** beats **`url`**: one object carries **`videos`** plus pagination for the feed and for “load more” in `Video.tsx`.
+
+## Workshop 1 — `component/Video.tsx`: changes from the starter
+
+This section lists **what to add or change** in `Video.tsx` when moving from a **single URL** to a **vertical feed**: snap scrolling, active video detection, play/pause, mute, and loading more pages.
+
+### 1. Props: take `videoRes`, not `url`
+
+**Starter issue:** `VideoFeed` only accepts **`{ url: string }`**, so it cannot render a list or use pagination metadata from **`VideoResponse`**.
+
+**Change:** Type the component as **`{ videoRes: VideoResponse }`**. Import **`VideoRes`** when you need it for list state.
+
+```tsx
+import { VideoResponse, VideoRes } from "@/types/backend/types";
+
+export default function VideoFeed({ videoRes }: { videoRes: VideoResponse }) {
+```
+
+### 2. Keep local list state seeded from the server
+
+**Starter issue:** There is no array of videos in state, so you cannot append results when the user scrolls.
+
+**Change:** Initialize **`videos`** from **`videoRes.videos`** with **`useState`**. Track **`currentIndex`**, **`isMuted`**, and a **`page`** counter for the *next* API page (often start at **`2`** if `page.tsx` already loaded page **`1`**).
+
+```tsx
+const [videos, setVideos] = useState<VideoRes[]>(videoRes.videos);
+const [currentIndex, setCurrentIndex] = useState(0);
+const [isMuted, setIsMuted] = useState(true);
+const [page, setPage] = useState(2);
+```
+
+### 3. Split a `VideoFrame` child (props for one clip)
+
+**Starter issue:** One big component mixes “feed logic” and “one video UI,” which gets hard to read once observers and pagination appear.
+
+**Change:** Add a **`VideoFrame`** (or similarly named) component that receives **`videoURL`**, **`isMuted`**, **`toggleMute`**, and **`isActive`**. The feed decides **which** item is active; the frame handles **how** it plays.
+
+```tsx
+export interface VideoProps {
+  videoURL: string;
+  isMuted: boolean;
+  toggleMute: () => void;
+  isActive: boolean;
+}
+
+const VideoFrame = ({ videoProps }: { videoProps: VideoProps }) => {
+  const { videoURL, isMuted, toggleMute, isActive } = videoProps;
+  // video ref, overlay, mute button, etc.
+};
+```
+
+### 4. Drive playback with `useEffect` + `isActive`
+
+**Starter issue:** Nothing ties “which card is on screen” to **`play()`** / **`pause()`**, so TikTok-style autoplay does not happen.
+
+**Change:** When **`isActive`** is true, set **`currentTime = 0`**, call **`play()`** (use **`.catch`** for autoplay restrictions). When false, **`pause()`**. Depend on **`isActive`** and **`videoURL`**.
+
+```tsx
+useEffect(() => {
+  if (!videoRef.current) return;
+  if (isActive) {
+    videoRef.current.currentTime = 0;
+    videoRef.current.play().catch((err) => {
+      console.error("Autoplay prevented by browser:", err);
+    });
+  } else {
+    videoRef.current.pause();
+  }
+}, [isActive, videoURL]);
+```
+
+Also add **`loop`**, **`muted={isMuted}`**, and **`playsInline`** on **`<video>`** for mobile-friendly behavior.
+
+### 5. Finish tap-to-play: both branches + short overlay
+
+**Starter issue:** `togglePlay` only handles the paused case and never calls **`play()`** / **`pause()`**, so the icon and the video get out of sync.
+
+**Change:** On click, if paused → **`play()`** and flash the play icon; if playing → **`pause()`** and flash pause. Clear the overlay after a short **`setTimeout`** (for example **600ms**).
+
+```tsx
+const togglePlay = (e: React.MouseEvent<HTMLDivElement>) => {
+  e.stopPropagation();
+  if (!videoRef.current) return;
+  if (videoRef.current.paused) {
+    setPaused({ type: false, id: Date.now() });
+    videoRef.current.play().catch((err) => console.error("Play failed:", err));
+  } else {
+    videoRef.current.pause();
+    setPaused({ type: true, id: Date.now() });
+  }
+  setTimeout(() => setPaused(null), 600);
+};
+```
+
+### 6. Vertical scroll container + snap points + `data-index`
+
+**Starter issue:** A single full-height video has no list layout, so users cannot scroll between clips.
+
+**Change:** Outer **`div`** with **`ref={containerRef}`**, **`overflow-y-scroll`**, **`snap-y snap-mandatory`**, and full viewport height. Each item is **`h-screen`**, **`snap-start`**, and **`data-index={index}`** so the observer can read which slide is active.
+
+```tsx
+<div
+  ref={containerRef}
+  className="h-screen w-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide bg-black text-white"
+>
+  {videos.map((video, index) => (
+    <div
+      key={`${video.id}-${index}`}
+      data-index={index}
+      className="h-screen w-full snap-start snap-always"
+    >
+      <VideoFrame
+        videoProps={{
+          videoURL: video.url,
+          isMuted,
+          toggleMute,
+          isActive: index === currentIndex,
+        }}
+      />
+    </div>
+  ))}
+</div>
+```
+
+### 7. `IntersectionObserver` to set `currentIndex`
+
+**Starter issue:** Without visibility detection, **`isActive`** never updates as the user scrolls.
+
+**Change:** **`useRef`** for the scroll root, **`useCallback`** for the observer callback, **`useEffect`** to **`observe`** every **`[data-index]`** child when **`videos`** changes. Use **`root: containerRef.current`** and a **`threshold`** (for example **`0.6`**) so “mostly visible” means active.
+
+```tsx
+const observerCallback = useCallback((entries: IntersectionObserverEntry[]) => {
+  entries.forEach((entry) => {
+    if (entry.isIntersecting) {
+      const idx = Number(entry.target.getAttribute("data-index"));
+      setCurrentIndex(idx);
+    }
+  });
+}, []);
+
+useEffect(() => {
+  const observer = new IntersectionObserver(observerCallback, {
+    root: containerRef.current,
+    threshold: 0.6,
+  });
+  const items = containerRef.current?.querySelectorAll("[data-index]");
+  items?.forEach((el) => observer.observe(el));
+  return () => observer.disconnect();
+}, [videos, observerCallback]);
+```
+
+### 8. Load more videos near the end (client → server helper)
+
+**Starter issue:** The feed only ever shows the first batch from `page.tsx`.
+
+**Change:** Import **`getVideosByQuery`** from **`@/lib/getVideos`**. When **`videos.length - currentIndex - 1 <= 2`**, fetch the next **`page`**, **dedupe** by **`id`**, append, then increment **`page`**. Use **`fetchingRef`** so two overlapping effects do not double-fetch.
+
+```tsx
+import { getVideosByQuery } from "@/lib/getVideos";
+
+const fetchingRef = useRef(false);
+
+useEffect(() => {
+  const remaining = videos.length - currentIndex - 1;
+  if (remaining <= 2 && !fetchingRef.current) {
+    fetchingRef.current = true;
+    getVideosByQuery("nature", page, 5)
+      .then((data) => {
+        if (data?.videos.length) {
+          setVideos((prev) => {
+            const seen = new Set(prev.map((v) => v.id));
+            const next = data.videos.filter((v) => !seen.has(v.id));
+            return [...prev, ...next];
+          });
+          setPage((p) => p + 1);
+        }
+        fetchingRef.current = false;
+      })
+      .catch((err) => {
+        console.error("Fetch error:", err);
+        fetchingRef.current = false;
+      });
+  }
+}, [currentIndex, videos.length, page]);
+```
+
+### 9. Mute toggle UI (optional but matches the full workshop app)
+
+**Starter issue:** No way to unmute; browsers often require user interaction before audio.
+
+**Change:** A small **`button`** that calls **`toggleMute`** and swaps **`/mute.png`** vs **`/unmute.png`**. Keep **`pointer-events`** sensible so overlays do not block scrolling.
+
+**Why for Workshop 1:** Students practice **`useState`**, **`useEffect`**, **`useRef`**, **`useCallback`**, list rendering, and the browser **`IntersectionObserver`** API—exactly the skills behind a TikTok-style feed—while reusing **`getVideosByQuery`** for pagination without exposing the API key on the client bundle.
+
