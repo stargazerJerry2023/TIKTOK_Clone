@@ -1,55 +1,66 @@
-You can paste this into your README (or a docs/workshop-1-getVideos.md if you prefer a separate file).
-
-## Workshop 1 — `lib/getVideos.ts`: changes from the starter
-This section lists **what to add or change** in `getVideos.ts` when moving from the hardcoded starter to a usable Pexels client.
-### 1. Use function parameters in the URL
-**Starter issue:** The request URL is fixed (e.g. `nature`, page `1`, `per_page` `1`), so parameters like `query`, `pages`, and `per_page` are ignored.
-**Change:** Build the URL from the arguments you pass in.
+## Workshop 1 — `lib/getVideos.ts`
+Each section below is **one change**: short explanation, then a **code block** with only that change.
+---
+### Section A — Build the URL from `query`, `pages`, and `per_page`
+**Text:**  
+The starter hardcodes `nature`, page `1`, and `per_page` in the URL, so your function arguments are never used. Replace the fixed URL with a template string that uses your parameters. `encodeURIComponent` keeps queries with spaces or special characters safe.
+**Code (replace your `fetch` URL):**
 ```ts
 const res = await fetch(
   `https://api.pexels.com/v1/videos/search?query=${encodeURIComponent(query ?? "")}&page=${pages}&per_page=${per_page}`,
   { headers: { Authorization: API_KEY } },
 );
-2. Separate fetch and json(), and check HTTP status
-Starter issue: await (await fetch(...)).json() always parses the body, even on 4xx/5xx responses.
+Section B — Check HTTP status before parsing JSON
+Text:
+fetch resolves even when the server returns 401, 404, or 500. Parse JSON only after you confirm success with res.ok, and throw a clear error otherwise.
 
-Change: Await fetch, verify res.ok, then res.json().
+Code (add after await fetch, before res.json()):
 
-const res = await fetch(/* ... */);
 if (!res.ok) {
   throw new Error("Failed to fetch videos");
 }
-const data = await res.json();
-3. Fix the mapped fields
-Starter issue: width is set from video.id instead of video.width, and tags is missing for the VideoRes type.
+Section C — Parse the body in a separate step
+Text:
+Avoid await (await fetch(...)).json() as a single expression. Store the Response, validate it, then call .json() on a variable you name (e.g. data).
 
-Change:
+Code:
+
+const data = await res.json();
+Section D — Fix width in the mapper
+Text:
+The starter sometimes sets width from video.id, which is incorrect. Use the real width from the API.
+
+Code (inside your .map callback object):
 
 width: video.width,
-tags: video.tags || [],
-4. Return a VideoResponse, not only an array
-Starter issue: Returning videos alone loses pagination metadata from Pexels.
+Section E — Add tags to match VideoRes
+Text:
+Your VideoRes type includes tags. The API may or may not include it; default to an empty array so the field is always present.
 
-Change: Return the shape your types expect:
+Code (inside your .map callback object):
+
+tags: video.tags || [],
+Section F — Return VideoResponse instead of a bare array
+Text:
+Callers (like page.tsx → VideoFeed) need pagination fields plus the list. Return page, per_page, and videos from the parsed JSON.
+
+Code (replace return videos):
 
 return {
   page: data.page,
   per_page: data.per_page,
   videos,
 };
-Type the function as Promise<VideoResponse> (recommended).
+Section G — Type the function and use a named export
+Text:
+Annotate the return type as Promise<VideoResponse> so TypeScript catches mistakes. Export getVideosByQuery by name so imports match import { getVideosByQuery } from "@/lib/getVideos". Remove export default if you switch to this style.
 
-5. Naming and exports
-Change: Prefer a clear name and a named export so app/page.tsx can do:
-
-import { getVideosByQuery } from "@/lib/getVideos";
-Example:
+Code (function signature + export):
 
 export const getVideosByQuery = async (
   query: string,
   pages: number,
   per_page: number = 5,
 ): Promise<VideoResponse> => {
-  // ...
+  // function body...
 };
-Remove the old export default GetVideos if you switch to a named export.
